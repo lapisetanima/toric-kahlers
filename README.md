@@ -43,4 +43,5 @@ viz.plot_fields(g, names=("S", "S - A_ext", "|Ric|^2"))
 | `metric.py` | `ToricMetric`: S, \|Ric\|², Futaki kernel S − Ŝ, extremal defect S − A_ext |
 | `quadrature.py` | Gauss quadrature on polygons, for checking identities numerically |
 | `stability.py` | exact crease profiles `CreaseProfile`, `crease_search` with exact rational certificates |
+| `parametric.py` | `ParametricPolygon`: fixed normals, symbolic support constants (the Kähler class); invariants as exact rational functions |
 | `viz.py` | polygon and field plots |
