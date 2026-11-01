@@ -50,11 +50,10 @@ class ToricMetric:
     """
 
     def __init__(self, polygon: Polygon, h=0, name: str | None = None):
-        if not polygon.is_delzant:
-            raise ValueError("toric metrics need a Delzant polygon")
+        # Non-Delzant or labelled polygons give orbifold metrics; the formulas are the same.
         self.polygon = polygon
-        self._U = np.array([e.normal for e in polygon.edges], dtype=float)
-        self._lam = np.array([float(e.constant) for e in polygon.edges])
+        self._U = np.array([[float(c) for c in e.labelled_normal] for e in polygon.edges])
+        self._lam = np.array([float(e.labelled_constant) for e in polygon.edges])
         if hasattr(h, "tensor"):
             self.h = h
             self.name = name or f"Guillemin + {h}"

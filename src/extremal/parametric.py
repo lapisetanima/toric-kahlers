@@ -64,6 +64,8 @@ class ParametricPolygon:
     @classmethod
     def from_polygon(cls, P: Polygon, constants: dict, params=None, name: str = "") -> ParametricPolygon:
         """Start from a `Polygon` and replace some support constants: {edge index: expression}."""
+        if P.is_labelled:
+            raise NotImplementedError("ParametricPolygon does not support labels yet")
         lams = [sp.Rational(e.constant.numerator, e.constant.denominator) for e in P.edges]
         for i, c in constants.items():
             lams[i] = sp.sympify(c)

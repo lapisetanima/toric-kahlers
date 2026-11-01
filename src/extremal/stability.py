@@ -74,7 +74,7 @@ class CreaseProfile:
         A = self.A or P.A_ext
         c0, c1, c2 = num(A.c0), num(A.c1), num(A.c2)
         V = [(num(v[0]), num(v[1])) for v in P.vertices]
-        lengths = [num(e.lattice_length) for e in P.edges]
+        lengths = [num(e.sigma_length) for e in P.edges]  # σ-mass of each edge
         tv = [n[0] * v[0] + n[1] * v[1] for v in V]
         if not exact:  # snap values equal up to round-off, so no spurious sliver intervals appear
             tol = 1e-12 * max(1.0, max(abs(t) for t in tv))

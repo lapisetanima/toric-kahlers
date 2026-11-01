@@ -33,7 +33,13 @@ from .exact import (
 
 @dataclass(frozen=True)
 class Edge:
-    """Edge `index` runs from `start` to `end` (CCW). On it, l(x) = <normal, x> - constant vanishes."""
+    """Edge `index` runs from `start` to `end` (CCW). It lies on {<normal, x> = constant}.
+
+    `label` m > 0 (default 1) makes the polygon labelled (Lerman–Tolman): the defining function
+    is l = m (<normal, x> - constant), which enters Guillemin's potential ½ Σ l log l, and the
+    boundary measure on the edge, normalized by dσ ∧ dl = dx, has total mass lattice_length / m.
+    An integer m > 1 gives an orbifold, with cone angle 2π/m along the corresponding divisor.
+    """
 
     index: int
     start: Point
@@ -42,14 +48,31 @@ class Edge:
     lattice_length: Fraction
     normal: tuple[int, int]  # primitive, inward
     constant: Fraction  # lambda
+    label: Fraction = Fraction(1)
+
+    @property
+    def labelled_normal(self) -> tuple[Fraction, Fraction]:
+        return (self.label * self.normal[0], self.label * self.normal[1])
+
+    @property
+    def labelled_constant(self) -> Fraction:
+        return self.label * self.constant
+
+    @property
+    def sigma_length(self) -> Fraction:
+        """σ(edge) = lattice_length / label."""
+        return self.lattice_length / self.label
 
     def ell(self, x, y):
-        """Affine function l = <u, x> - lambda; works on Fractions, floats or numpy arrays."""
-        return self.normal[0] * x + self.normal[1] * y - self.constant
+        """Affine function l = m (<u, x> - lambda); works on Fractions, floats or numpy arrays."""
+        base = self.normal[0] * x + self.normal[1] * y - self.constant
+        if self.label == 1:
+            return base
+        return (float(self.label) if hasattr(base, "dtype") else self.label) * base
 
     def ell_sympy(self) -> sp.Expr:
-        lam = sp.Rational(self.constant.numerator, self.constant.denominator)
-        return self.normal[0] * X + self.normal[1] * Y - lam
+        q = lambda c: sp.Rational(c.numerator, c.denominator)  # noqa: E731
+        return q(self.label) * (self.normal[0] * X + self.normal[1] * Y - q(self.constant))
 
 
 @dataclass(frozen=True)
@@ -86,17 +109,24 @@ class Polygon:
     """A convex lattice-normal polygon. Pass vertices in either orientation; they are stored CCW.
 
     Coordinates must be exact: ints, Fractions, or strings like "1/2".
+    `labels` (optional) gives a positive label for each edge, edge i running from input vertex i
+    to input vertex i+1; see `Edge`. Unlabelled means all labels are 1.
     """
 
     vertices: tuple[Point, ...]
     name: str = ""
+    labels: tuple | None = None
 
     def __post_init__(self):
         verts = [as_point(v) for v in self.vertices]
         if len(verts) < 3:
             raise ValueError("a polygon needs at least 3 vertices")
+        labels = [Fraction(1)] * len(verts) if self.labels is None else [as_fraction(m) for m in self.labels]
+        if len(labels) != len(verts) or any(m <= 0 for m in labels):
+            raise ValueError("labels must be positive, one per edge")
         if integrate.area(verts) < 0:
             verts = [verts[0]] + verts[:0:-1]  # reverse, keeping the first vertex first
+            labels = labels[::-1]  # edge j of the reversed list is edge n-1-j of the input
         n = len(verts)
         for i in range(n):
             a, b, c = verts[i - 1], verts[i], verts[(i + 1) % n]
@@ -104,6 +134,7 @@ class Polygon:
             if turn <= 0:
                 raise ValueError(f"vertices are not strictly convex at vertex {i} = {b}")
         object.__setattr__(self, "vertices", tuple(verts))
+        object.__setattr__(self, "labels", None if all(m == 1 for m in labels) else tuple(labels))
 
     # ------------------------------------------------------------------ combinatorics
 
@@ -119,13 +150,18 @@ class Polygon:
             e, length = primitive((q[0] - p[0], q[1] - p[1]))
             u = (-e[1], e[0])  # rotate +90°: inward for CCW
             lam = u[0] * p[0] + u[1] * p[1]
-            out.append(Edge(i, p, q, e, length, u, lam))
+            label = self.labels[i] if self.labels else Fraction(1)
+            out.append(Edge(i, p, q, e, length, u, lam, label))
         return tuple(out)
 
     @cached_property
     def vertex_determinants(self) -> tuple[int, ...]:
         """det(e_{i-1}, e_i) at each vertex i; all equal to 1 iff the polygon is Delzant."""
         return tuple(int(det2(self.edges[i - 1].direction, self.edges[i].direction)) for i in range(self.n))
+
+    @property
+    def is_labelled(self) -> bool:
+        return self.labels is not None
 
     @cached_property
     def is_delzant(self) -> bool:
@@ -143,8 +179,8 @@ class Polygon:
 
     @cached_property
     def boundary_measure(self) -> Fraction:
-        """sigma(∂P): the total lattice length of the boundary."""
-        return sum((e.lattice_length for e in self.edges), Fraction(0))
+        """sigma(∂P): the total lattice length of the boundary (each edge divided by its label)."""
+        return sum((e.sigma_length for e in self.edges), Fraction(0))
 
     def integrate(self, f) -> Fraction:
         """∫_P f dmu for a polynomial f (sympy expression in x, y, number, or Poly dict)."""
@@ -153,7 +189,7 @@ class Polygon:
     def boundary_integrate(self, f) -> Fraction:
         """∫_{∂P} f dsigma for a polynomial f."""
         poly = poly_from(f)
-        return sum((e.lattice_length * segment_integral(e.start, e.end, poly) for e in self.edges), Fraction(0))
+        return sum((e.sigma_length * segment_integral(e.start, e.end, poly) for e in self.edges), Fraction(0))
 
     @cached_property
     def area_barycenter(self) -> Point:
@@ -224,7 +260,7 @@ class Polygon:
                 t_star = g0 / (g0 - g1)
                 t0, t1 = (Fraction(0), t_star) if g0 > 0 else (t_star, Fraction(1))
             gt0, gt1 = g0 + t0 * (g1 - g0), g0 + t1 * (g1 - g0)
-            boundary += e.lattice_length * (t1 - t0) * (gt0 + gt1) / 2
+            boundary += e.sigma_length * (t1 - t0) * (gt0 + gt1) / 2
         return boundary - interior
 
     # ------------------------------------------------------------------ constructions
@@ -245,7 +281,11 @@ class Polygon:
         verts = list(self.vertices)
         verts[vertex : vertex + 1] = [before, after]
         name = f"{self.name}+blowup" if self.name else ""
-        return Polygon(tuple(verts), name=name)
+        labels = None
+        if self.labels:  # the new edge (the exceptional divisor) gets label 1
+            labels = list(self.labels)
+            labels[vertex:vertex] = [Fraction(1)]
+        return Polygon(tuple(verts), name=name, labels=labels)
 
     def transform(self, matrix, shift=(0, 0)) -> Polygon:
         """Image under x -> matrix @ x + shift, with matrix in GL(2, Z)."""
@@ -254,7 +294,7 @@ class Polygon:
             raise ValueError("matrix must be an integer matrix with determinant ±1")
         s = as_point(shift)
         verts = tuple((a * p[0] + b * p[1] + s[0], c * p[0] + d * p[1] + s[1]) for p in self.vertices)
-        return Polygon(verts, name=self.name)
+        return Polygon(verts, name=self.name, labels=self.labels)
 
     def normal_form(self) -> tuple[Point, ...]:
         """Canonical vertex tuple up to GL(2, Z) and translation (requires Delzant).
@@ -264,6 +304,8 @@ class Polygon:
         """
         if not self.is_delzant:
             raise ValueError("normal form is only defined for Delzant polygons")
+        if self.is_labelled:
+            raise NotImplementedError("normal form ignores labels; not defined for labelled polygons")
         best = None
         for i in range(self.n):
             e_next = self.edges[i].direction
@@ -293,7 +335,7 @@ class Polygon:
 
     def computed(self) -> list[str]:
         """Names of the cached quantities that have been computed so far."""
-        return sorted(k for k in self.__dict__ if k not in ("vertices", "name"))
+        return sorted(k for k in self.__dict__ if k not in ("vertices", "name", "labels"))
 
     def report(self) -> str:
         """A Markdown summary of the polygon and its invariants (computes them if needed)."""
@@ -302,16 +344,19 @@ class Polygon:
         lines.append(f"- vertices: {', '.join(fmt(v) for v in self.vertices)}")
         status = "yes" if self.is_delzant else f"no (singular vertices {list(self.singular_vertices)})"
         lines.append(f"- Delzant: {status}")
+        if self.is_labelled:
+            lines.append(f"- labels: {', '.join(str(e.label) for e in self.edges)} (an orbifold if integers > 1)")
         lines.append(f"- area μ(P) = {self.area},  boundary σ(∂P) = {self.boundary_measure}")
         lines.append(f"- average scalar curvature Ŝ = {self.S_hat}")
         lines.append(f"- A_ext = {self.A_ext}")
         F = self.futaki
         lines.append(f"- Futaki (F(x), F(y)) = ({F[0]}, {F[1]})" + ("  — vanishes" if self.futaki_vanishes else ""))
-        lines += ["", "| edge | normal u | λ | lattice length |", "|---|---|---|---|"]
+        lines += ["", "| edge | normal u | λ | lattice length | label | σ(edge) |", "|---|---|---|---|---|---|"]
         for e in self.edges:
-            lines.append(f"| {e.index} | {e.normal} | {e.constant} | {e.lattice_length} |")
+            lines.append(f"| {e.index} | {e.normal} | {e.constant} | {e.lattice_length} | {e.label} | {e.sigma_length} |")
         return "\n".join(lines)
 
     def __repr__(self) -> str:
         verts = ", ".join(f"({p[0]}, {p[1]})" for p in self.vertices)
-        return f"Polygon({self.name + ': ' if self.name else ''}{verts})"
+        lab = f", labels={tuple(str(m) for m in self.labels)}" if self.labels else ""
+        return f"Polygon({self.name + ': ' if self.name else ''}{verts}{lab})"

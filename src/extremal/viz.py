@@ -101,8 +101,8 @@ def plot_polygon(
             )
         if labels:
             pos = mid - 0.09 * span * u_hat
-            ax.text(pos[0], pos[1], f"u={e.normal}\nL={e.lattice_length}", color=INK_2, fontsize=7,
-                    ha="center", va="center")
+            text = f"u={e.normal}\nL={e.lattice_length}" + (f"\nm={e.label}" if P.is_labelled else "")
+            ax.text(pos[0], pos[1], text, color=INK_2, fontsize=7, ha="center", va="center")
     pad = (0.25 if labels else 0.1) * span
     ax.set_xlim(V[:, 0].min() - pad, V[:, 0].max() + pad)
     ax.set_ylim(V[:, 1].min() - pad, V[:, 1].max() + pad)

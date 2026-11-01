@@ -187,6 +187,41 @@ class SolveResult:
         d = self.metric.extremal_defect(x[keep], y[keep])
         return {"sup": float(np.max(np.abs(d))), "L2": float(np.sqrt(np.sum(w[keep] * d**2) / np.sum(w[keep])))}
 
+    def convexity(self, order: int = 120) -> dict:
+        """Is u convex on all of P, not just at the solver's nodes? Tested on a fine, edge-graded set."""
+        x, y, _ = polygon_quadrature(self.polygon, order, scheme="edges", grading=2)
+        eig = self.metric.min_hessian_eigenvalue(x, y)
+        bad = ~(eig > 0)
+        return {"points": int(x.size), "non_convex": int(bad.sum()), "min_eigenvalue": float(np.nanmin(eig))}
+
+    def edge_convexity(self, samples: int = 400) -> list[dict]:
+        """For each edge, the minimum along it of τᵀ (Hess u) τ, with τ the unit edge direction.
+
+        On the edge the edge's own Guillemin term drops out of τᵀ (Hess u) τ (it is ∝ (n·τ)² = 0),
+        so this is the convexity of u restricted to the edge: the potential of the metric on that
+        divisor. `ratio` compares with Guillemin's metric at the same point (1 for h = 0); a ratio
+        near 0 means the divisor's metric is degenerating there. `profile` is that ratio along the
+        edge at the parameters `t` (0 at the start vertex, 1 at the end vertex).
+        """
+        P = self.polygon
+        U = np.array([[float(c) for c in e.labelled_normal] for e in P.edges])
+        lam = np.array([float(e.labelled_constant) for e in P.edges])
+        t = (np.arange(samples) + 0.5) / samples
+        out = []
+        for i, e in enumerate(P.edges):
+            a, b = np.array(e.start, float), np.array(e.end, float)
+            tau = (b - a) / np.linalg.norm(b - a)
+            x, y = a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])
+            others = [j for j in range(len(U)) if j != i]
+            ell = x[:, None] * U[others, 0] + y[:, None] * U[others, 1] - lam[others]
+            guillemin = 0.5 * np.sum((U[others] @ tau) ** 2 / ell, axis=1)
+            h = self.potential.tensor(2, x, y)
+            value = guillemin + np.einsum("na,nab,b->n", np.broadcast_to(tau, (x.size, 2)), h, tau)
+            k = int(np.argmin(value / guillemin))
+            out.append({"edge": i, "label": e.label, "min": float(value.min()), "ratio": float((value / guillemin)[k]),
+                        "at": (float(x[k]), float(y[k])), "t": t, "profile": value / guillemin})
+        return out
+
     def __str__(self) -> str:
         lines = [f"{'iter':>4} {'F':>22} {'decrement²':>12} {'step':>6}"]
         lines += [f"{r['iter']:>4} {r['F']:>22.15f} {r['decrement2']:>12.3e} {r['step']:>6.3f}" for r in self.history]
@@ -201,27 +236,33 @@ class ExtremalSolver:
     `degree` is the maximal total degree of h; there are (d+1)(d+2)/2 - 3 unknowns.
     `quad_order` is the number of Gauss points per direction on each fan triangle
     (default degree + 12). `A` defaults to A_ext; any affine A (or a constant) is allowed.
+    `quad_scheme`, `grading`: see `polygon_quadrature`. The default ("vertex") is right when an
+    extremal metric exists. Without one, minimizers degenerate in a thin layer along edges, and
+    the nodes must resolve it: use quad_scheme="edges" with grading 2 or 3 and a larger quad_order.
+
+    Convexity is enforced only at the quadrature nodes (F is +inf where Hess u is not positive
+    definite there). Check the result with `SolveResult.convexity()` and `edge_convexity()`.
     """
 
-    def __init__(self, polygon: Polygon, degree: int = 12, A=None, quad_order: int | None = None):
-        if not polygon.is_delzant:
-            raise ValueError("the solver needs a Delzant polygon")
+    def __init__(self, polygon: Polygon, degree: int = 12, A=None, quad_order: int | None = None,
+                 quad_scheme: str = "vertex", grading: float = 1.0):
         if degree < 2:
             raise ValueError("degree must be at least 2")
         self.polygon = polygon
         self.degree = degree
         self.A = polygon.A_ext if A is None else A
         self.quad_order = quad_order or degree + 12
+        self.quad_scheme, self.grading = quad_scheme, grading
 
-        x, y, w = polygon_quadrature(polygon, self.quad_order)
+        x, y, w = polygon_quadrature(polygon, self.quad_order, scheme=quad_scheme, grading=grading)
         self.x, self.y, self.w = x, y, w
         self.basis = PolygonBasis(polygon, degree, x, y, w)
         self.free = np.arange(3, self.basis.n)  # drop the affine functions
 
-        U = np.array([e.normal for e in polygon.edges], float)
-        lam = np.array([float(e.constant) for e in polygon.edges])
-        ell = x[:, None] * U[:, 0] + y[:, None] * U[:, 1] - lam
-        self.HG = 0.5 * np.einsum("qk,ka,kb->qab", 1 / ell, U, U)
+        self._U = np.array([[float(c) for c in e.labelled_normal] for e in polygon.edges])
+        self._lam = np.array([float(e.labelled_constant) for e in polygon.edges])
+        ell = x[:, None] * self._U[:, 0] + y[:, None] * self._U[:, 1] - self._lam
+        self.HG = 0.5 * np.einsum("qk,ka,kb->qab", 1 / ell, self._U, self._U)
         self.KG = np.linalg.inv(self.HG)
         D = self.basis.derivatives(x, y, 2)
         self.Bxx, self.Bxy, self.Byy = (D[al][:, self.free] for al in ((2, 0), (1, 1), (0, 2)))
@@ -236,7 +277,7 @@ class ExtremalSolver:
             p, q = np.array(e.start, float), np.array(e.end, float)
             pts = p + t[:, None] * (q - p)
             vals = self.basis.derivatives(pts[:, 0], pts[:, 1], 0)[(0, 0)][:, self.free]
-            boundary += float(e.lattice_length) * tw @ vals
+            boundary += float(e.sigma_length) * tw @ vals
         if isinstance(self.A, Affine):
             a_vals = self.A(self.x, self.y)
         else:
@@ -267,15 +308,28 @@ class ExtremalSolver:
             return np.inf
         return float(-self.w @ np.log(det) + 2 * self.Lvec @ c)
 
+    def inverse_hessian(self, c: np.ndarray) -> np.ndarray:
+        """K = (Hess u)^{-1} = (I + K_G Hess h)^{-1} K_G, stable even where Hess u_G is huge (near ∂P)."""
+        hxx, hxy, hyy = self.Bxx @ c, self.Bxy @ c, self.Byy @ c
+        KG = self.KG
+        m00 = 1 + KG[:, 0, 0] * hxx + KG[:, 0, 1] * hxy
+        m01 = KG[:, 0, 0] * hxy + KG[:, 0, 1] * hyy
+        m10 = KG[:, 1, 0] * hxx + KG[:, 1, 1] * hxy
+        m11 = 1 + KG[:, 1, 0] * hxy + KG[:, 1, 1] * hyy
+        det = m00 * m11 - m01 * m10
+        Minv = np.stack([np.stack([m11, -m01], -1), np.stack([-m10, m00], -1)], -2) / det[:, None, None]
+        K = Minv @ KG
+        return 0.5 * (K + np.swapaxes(K, 1, 2))
+
     def gradient_and_hessian(self, c: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        K = np.linalg.inv(self.hessian_of_u(c))
+        K = self.inverse_hessian(c)
         w = self.w
         grad = -(w * K[:, 0, 0]) @ self.Bxx - 2 * (w * K[:, 0, 1]) @ self.Bxy - (w * K[:, 1, 1]) @ self.Byy
         grad += 2 * self.Lvec
         # K = L Lᵀ (2x2 Cholesky); M_k = Lᵀ Hess φ_k L; tr(K Φ_k K Φ_l) = <M_k, M_l>_Frobenius
         l00 = np.sqrt(K[:, 0, 0])
         l10 = K[:, 1, 0] / l00
-        l11 = np.sqrt(K[:, 1, 1] - l10**2)
+        l11 = np.sqrt(np.maximum(K[:, 1, 1] - l10**2, 0.0))
         sw = np.sqrt(w)[:, None]
         m00 = sw * ((l00**2)[:, None] * self.Bxx + (2 * l00 * l10)[:, None] * self.Bxy + (l10**2)[:, None] * self.Byy)
         m01 = sw * (l11[:, None] * (l00[:, None] * self.Bxy + l10[:, None] * self.Byy))
@@ -288,8 +342,8 @@ class ExtremalSolver:
     def solve(self, c0=None, tol: float = 1e-28, max_iter: int = 60, verbose: bool = False) -> SolveResult:
         """Damped Newton with backtracking (Armijo).
 
-        Stops when the Newton decrement² < tol, or when it stops shrinking once it is below 1e-18
-        (round-off). The tolerance must be tiny: near the solution the decrement² is about
+        Stops when the Newton decrement² < tol, or when it stops shrinking (or the line search
+        fails) once it is at round-off level, below 1e-12 |F|. The tolerance must be tiny: near the solution the decrement² is about
         ‖S − A‖² divided by the (large) Hessian of the high modes, so a loose tolerance stops
         while S − A is still visibly nonzero. `c0` may be a previous `SolveResult`
         (e.g. at lower degree) to start from.
@@ -324,8 +378,9 @@ class ExtremalSolver:
                 print(f"{it:>3}  F = {F:.15f}   decrement² = {decrement2:.3e}   step = {t:.3g}")
             if t > 1e-10:
                 c, F = c + t * step, F_new
-            stalled = it > 0 and decrement2 < 1e-18 and decrement2 > 0.25 * history[-2]["decrement2"]
-            if decrement2 < tol or stalled:
+            roundoff = decrement2 < 1e-12 * max(1.0, abs(F))  # F itself is only known to ~1e-16 |F|
+            stalled = it > 0 and roundoff and decrement2 > 0.25 * history[-2]["decrement2"]
+            if decrement2 < tol or stalled or (roundoff and t <= 1e-10):
                 converged = True
                 break
             if t <= 1e-10:
