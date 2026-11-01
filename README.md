@@ -44,4 +44,5 @@ viz.plot_fields(g, names=("S", "S - A_ext", "|Ric|^2"))
 | `quadrature.py` | Gauss quadrature on polygons, for checking identities numerically |
 | `stability.py` | exact crease profiles `CreaseProfile`, `crease_search` with exact rational certificates |
 | `parametric.py` | `ParametricPolygon`: fixed normals, symbolic support constants (the Kähler class); invariants as exact rational functions |
+| `solver.py` | `ExtremalSolver`: extremal metrics by Newton's method on Donaldson's convex functional, polynomial potentials of any degree in a basis orthonormal on the polygon |
 | `viz.py` | polygon and field plots |

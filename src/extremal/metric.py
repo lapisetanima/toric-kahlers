@@ -1,7 +1,8 @@
 """Toric Kähler metrics on a Delzant polygon, given by symplectic potentials u = u_G + h.
 
 Curvature is evaluated numerically (vectorized numpy) from closed-form derivatives of
-H = Hess(u): the Guillemin part is differentiated by hand, and `h` symbolically with sympy.
+H = Hess(u): the Guillemin part is differentiated by hand, and `h` either symbolically with
+sympy or, for a numeric potential (e.g. from the extremal solver), through its own `tensor` method.
 `scalar_curvature_symbolic` gives an independent sympy route, used in the tests.
 See CONVENTIONS.md for the formulas.
 """
@@ -42,7 +43,9 @@ def _tensor_function(expr: sp.Expr, order: int):
 class ToricMetric:
     """The toric Kähler metric with symplectic potential u = 1/2 Σ l_i log l_i + h on `polygon`.
 
-    `h` is a sympy expression in `extremal.x, extremal.y` (default 0: Guillemin's metric).
+    `h` is a sympy expression in `extremal.x, extremal.y` (default 0: Guillemin's metric), or a
+    numeric potential: any object with a method `tensor(order, x, y)` returning the array
+    (N, 2, ..., 2) of all order-`order` partial derivatives at flattened points.
     All field methods take numpy arrays x, y of the same shape and return arrays of that shape.
     """
 
@@ -50,11 +53,16 @@ class ToricMetric:
         if not polygon.is_delzant:
             raise ValueError("toric metrics need a Delzant polygon")
         self.polygon = polygon
-        self.h = sp.sympify(h)
-        self.name = name or ("Guillemin" if self.h == 0 else f"Guillemin + ({self.h})")
         self._U = np.array([e.normal for e in polygon.edges], dtype=float)
         self._lam = np.array([float(e.constant) for e in polygon.edges])
-        self._h_derivs = {k: _tensor_function(self.h, k) for k in (2, 3, 4)}
+        if hasattr(h, "tensor"):
+            self.h = h
+            self.name = name or f"Guillemin + {h}"
+            self._h_derivs = {k: (lambda x, y, k=k: h.tensor(k, x, y)) for k in (2, 3, 4)}
+        else:
+            self.h = sp.sympify(h)
+            self.name = name or ("Guillemin" if self.h == 0 else f"Guillemin + ({self.h})")
+            self._h_derivs = {k: _tensor_function(self.h, k) for k in (2, 3, 4)}
 
     # ------------------------------------------------------------------ core numerics
 
@@ -96,6 +104,32 @@ class ToricMetric:
         if inside.any():
             out[inside] = fn(*self._core(xf[inside], yf[inside]))
         return out.reshape(shape)
+
+    def affine_gradient_and_laplacian(self, x, y, c1: float, c2: float):
+        """|∇f|² and Δf for f = c0 + c1 x + c2 y (torus-invariant), Δ = div grad (analysts' sign).
+
+        In momentum coordinates g = H dx² + H⁻¹ dθ² has Riemannian volume dx dθ, so for
+        f = f(x): |∇f|² = K^{ij} f_i f_j and Δf = ∂_i (K^{ij} f_j), with K = H⁻¹.
+        """
+        c = np.array([c1, c2], float)
+
+        def fn(xf, yf):
+            H, dH, _ = self._hessian_derivatives(xf, yf)
+            K = np.linalg.inv(H)
+            dK = -np.einsum("nab,nbcj,ncd->nadj", K, dH, K)
+            div = np.einsum("njbj->nb", dK)  # Σ_j ∂_j K^{jb}
+            return np.einsum("nab,a,b->n", K, c, c), div @ c
+
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        shape = np.broadcast(x, y).shape
+        xf, yf = (np.broadcast_to(a, shape).ravel() for a in (x, y))
+        ell = xf[:, None] * self._U[:, 0] + yf[:, None] * self._U[:, 1] - self._lam
+        inside = np.all(ell > 0, axis=1)
+        grad2, lap = np.full(xf.shape, np.nan), np.full(xf.shape, np.nan)
+        if inside.any():
+            grad2[inside], lap[inside] = fn(xf[inside], yf[inside])
+        return grad2.reshape(shape), lap.reshape(shape)
 
     # ------------------------------------------------------------------ fields
 
@@ -148,6 +182,8 @@ class ToricMetric:
     # ------------------------------------------------------------------ symbolic route
 
     def potential(self) -> sp.Expr:
+        if not isinstance(self.h, sp.Expr):
+            raise TypeError("the symbolic route needs h to be a sympy expression")
         return sp.Rational(1, 2) * sum(e.ell_sympy() * sp.log(e.ell_sympy()) for e in self.polygon.edges) + self.h
 
     def scalar_curvature_symbolic(self) -> sp.Expr:
