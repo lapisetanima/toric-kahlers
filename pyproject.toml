@@ -11,6 +11,7 @@ dependencies = ["numpy", "sympy", "matplotlib"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ipykernel", "nbformat", "nbclient"]
+fast = ["python-flint"]  # rigorous root isolation for crease_exact (falls back to sympy without it)
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -72,3 +72,15 @@ Sanity check: for the standard simplex (CP², Fubini–Study) `M = 6·Id`, so `S
 * **Margin.** For each direction, `min_s L(f) / ∫_∂P f dσ`, with `f` the side of the crease vanishing at the
   area barycenter (Donaldson's normalization). It is scale-invariant and jumps at `s = n·c`.
 * **Certificates.** Instability is reported only for a rational crease whose `L` was computed exactly.
+* **Exact critical creases (`crease_exact.py`).** Lines `x + m y = s` (chart 0) and `m x + y = s` (chart 1,
+  used only for `m = 0`). On each cell (the pair of edges crossed) all quantities are rational in `(m, s)`;
+  critical points are common zeros of two polynomials, found by resultants and certified real-root isolation
+  (`AlgebraicReal`: minimal polynomial + rational interval with a sign change). The ratios are C¹ across
+  walls (lines through a vertex), so no separate wall search is needed. `crease_search` uses
+  `crease_minimum` for the margin by default (`exact=False` restores the sampled scan).
+* **Optimal destabilizer.** Minimize `W(f) = L_A(f) + ½∫ f² dmu` over convex `f`, `A = A_ext`
+  (Donaldson 2005, Székelyhidi 2008); then `L_A(f*) = −‖f*‖²` and `‖S − A_ext‖_{L²(dmu)} ≥ ‖f*‖` for every
+  metric. Over simple creases, `f* = c φ⊥` with `φ⊥` the `L²(dmu)`-projection of `max(0, ℓ)` off affine functions,
+  `c = −L_A(φ)/‖φ⊥‖²`. Stationarity ⇔ on each piece `A − f*` is the piece's extremal affine function with
+  measure `σ` on `∂P ∩ P_i` and zero on the crease. `optimality_scan` tests `L_{A−f*}(h) ≥ 0` on simple creases `h`
+  (necessary for optimality among all convex `f`; Wang–Zhou's reduction is only proved for affine `A`).

@@ -14,6 +14,9 @@ python -m venv .venv
 .venv\Scripts\python -m pytest
 ```
 
+Optional: `pip install -e ".[dev,fast]"` adds python-flint, which makes the exact crease computations in
+`crease_exact.py` much faster on polygons with many edges (without it they fall back to sympy).
+
 Open [notebooks/01_explore_polygon.ipynb](notebooks/01_explore_polygon.ipynb) and select the `.venv` interpreter as the kernel.
 
 ## Quick tour
@@ -43,6 +46,7 @@ viz.plot_fields(g, names=("S", "S - A_ext", "|Ric|^2"))
 | `metric.py` | `ToricMetric`: S, \|Ric\|², Futaki kernel S − Ŝ, extremal defect S − A_ext |
 | `quadrature.py` | Gauss quadrature on polygons, for checking identities numerically |
 | `stability.py` | exact crease profiles `CreaseProfile`, `crease_search` with exact rational certificates |
+| `crease_exact.py` | critical simple creases as exact algebraic numbers (resultants on each cell of the line arrangement): the exact stability margin `crease_minimum`, and the optimal destabilizer `optimal_crease` (Donaldson's Calabi lower bound, Székelyhidi's piece decomposition) |
 | `parametric.py` | `ParametricPolygon`: fixed normals, symbolic support constants (the Kähler class); invariants as exact rational functions |
 | `solver.py` | `ExtremalSolver`: extremal metrics by Newton's method on Donaldson's convex functional, polynomial potentials of any degree in a basis orthonormal on the polygon |
 | `viz.py` | polygon and field plots |

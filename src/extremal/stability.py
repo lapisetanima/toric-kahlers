@@ -188,17 +188,21 @@ class CreaseProfile:
         normalized and the ratio jumps. The ratio is scale-invariant; Donaldson's uniform stability
         asks for it to be bounded below by a positive constant.
         """
+        s = np.asarray(s, float)
+        L = self._upper_integrals(s, "L")
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return L, L / self.boundary_normalizer(s, side)
+
+    def boundary_normalizer(self, s, side: str = "auto") -> np.ndarray:
+        """∫_∂P f dσ for the crease f of `stability_ratio` (normalized to vanish at the barycenter)."""
         P = self.polygon
         n = [float(c) for c in self.n]
         s = np.asarray(s, float)
-        L = self._upper_integrals(s, "L")
         B_up = self._upper_integrals(s, "B")
         bx, by = (float(P.boundary_barycenter[i] * P.boundary_measure) for i in range(2))
         first_moment = n[0] * bx + n[1] * by - s * float(P.boundary_measure)  # ∫_∂P (n·x − s) dσ
         upper = {"auto": s >= self.barycenter_level, "upper": True, "lower": False}[side]
-        B = np.where(upper, B_up, B_up - first_moment)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            return L, L / B
+        return np.where(upper, B_up, B_up - first_moment)
 
     def density(self, t: np.ndarray) -> np.ndarray:
         """ρ(t) (float), without the point mass at t_max."""
@@ -329,26 +333,39 @@ def certify(P: Polygon, theta: float, A: Affine | None = None, max_coeff: int = 
 
 
 def crease_search(P: Polygon, n_angles: int = 360, samples: int = 200, refine: int = 3,
-                  A: Affine | None = None, tol: float = 1e-9) -> CreaseSearchResult:
-    """Scan all simple creases: a grid over directions θ ∈ [0, π) and offsets s, local refinement
-    around the worst direction, and, if the normalized margin is below −tol, an exact rational
-    certificate.
+                  A: Affine | None = None, tol: float = 1e-9, exact: bool = True) -> CreaseSearchResult:
+    """Minimize L(f)/∫_∂P f dσ over all simple creases, and certify instability exactly.
 
-    Floating point only locates candidates; instability is reported only after a rational crease
-    has been checked exactly. A positive result is evidence, not a proof (the scan is sampled).
+    With `exact=True` (default) the minimum is located exactly by `crease_exact.crease_minimum`
+    (critical points of the ratio on each cell of the line arrangement, as algebraic numbers);
+    with `exact=False` by a sampled scan over directions θ ∈ [0, π) and offsets s with local
+    refinement. Either way `margin` holds the sampled per-direction minima (for plots), and if
+    the minimum is below −tol an exact rational certificate is searched for nearby: instability
+    is reported only after a rational crease has been checked in exact arithmetic.
     """
     A = A or P.A_ext
     theta = np.linspace(0, math.pi, n_angles, endpoint=False)
     margin = np.empty(n_angles)
     for i, t in enumerate(theta):
         margin[i], _ = _direction_margin(P, A, t, samples)
-    best_t = float(theta[int(np.argmin(margin))])
-    width = math.pi / n_angles
-    for _ in range(refine):
-        local = np.linspace(best_t - width, best_t + width, 21)
-        vals = [_direction_margin(P, A, t, samples)[0] for t in local]
-        best_t, width = float(local[int(np.argmin(vals))]), width / 10
-    best_margin, best_s = _direction_margin(P, A, best_t, samples)
+    found = None
+    if exact:
+        from .crease_exact import crease_minimum
+
+        found = crease_minimum(P, A).crease
+    if found is not None:
+        best_t, best_s, best_margin = found.theta, found.unit_offset, float(found.value)
+        if margin.min() < best_margin - 1e-9 * max(1.0, abs(best_margin)):
+            import warnings
+            warnings.warn(f"sampled margin {margin.min():.12g} is below the exact minimum {best_margin:.12g}")
+    else:
+        best_t = float(theta[int(np.argmin(margin))])
+        width = math.pi / n_angles
+        for _ in range(refine):
+            local = np.linspace(best_t - width, best_t + width, 21)
+            vals = [_direction_margin(P, A, t, samples)[0] for t in local]
+            best_t, width = float(local[int(np.argmin(vals))]), width / 10
+        best_margin, best_s = _direction_margin(P, A, best_t, samples)
     cert = certify(P, best_t, A) if best_margin < -tol else None
     return CreaseSearchResult(
         theta=theta, margin=margin, best_theta=best_t, best_s=best_s, best_margin=best_margin,
