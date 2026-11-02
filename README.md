@@ -47,6 +47,7 @@ viz.plot_fields(g, names=("S", "S - A_ext", "|Ric|^2"))
 | `quadrature.py` | Gauss quadrature on polygons, for checking identities numerically |
 | `stability.py` | exact crease profiles `CreaseProfile`, `crease_search` with exact rational certificates |
 | `crease_exact.py` | critical simple creases as exact algebraic numbers (resultants on each cell of the line arrangement): the exact stability margin `crease_minimum`, and the optimal destabilizer `optimal_crease` (Donaldson's Calabi lower bound, Székelyhidi's piece decomposition) |
+| `ambitoric.py` | Apostolov–Calderbank–Gauduchon's stability criterion for labelled quadrilaterals (creases along the diagonals and the coordinate lines of the conic C(Δ, L)): an independent check of `crease_exact` |
 | `parametric.py` | `ParametricPolygon`: fixed normals, symbolic support constants (the Kähler class); invariants as exact rational functions |
 | `solver.py` | `ExtremalSolver`: extremal metrics by Newton's method on Donaldson's convex functional, polynomial potentials of any degree in a basis orthonormal on the polygon |
 | `viz.py` | polygon and field plots |
