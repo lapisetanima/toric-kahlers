@@ -6,6 +6,11 @@ curvature as functions of the momentum coordinates, and plots.
 
 Formulas and normalizations: [CONVENTIONS.md](CONVENTIONS.md).
 
+New to the subject? The colloquium slides [talk/talk.pdf](talk/talk.pdf) give the background with
+lots of pictures. They start from the Legendre transform in classical mechanics and go through moment
+polygons, symplectic potentials, extremal metrics and stability, then on to what this code computes.
+The source is in `talk/`: `talk.tex`, and `make_figures.py`, which draws every figure with this package.
+
 ## Setup (Windows, PowerShell)
 
 ```powershell
