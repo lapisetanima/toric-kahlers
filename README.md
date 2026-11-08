@@ -11,6 +11,11 @@ lots of pictures. They start from the Legendre transform in classical mechanics 
 polygons, symplectic potentials, extremal metrics and stability, then on to what this code computes.
 The source is in `talk/`: `talk.tex`, and `make_figures.py`, which draws every figure with this package.
 
+Research notes: [docs/pentagon_walls.md](docs/pentagon_walls.md) studies a two-parameter family of
+labelled pentagons. In that family the boundary between stable and unstable polygons is computed
+exactly and turns out to be an algebraic hypersurface. The note also contains the supporting theory:
+crease space as the dual projective plane, and a vertex formula for Donaldson's functional on creases.
+
 ## Setup (Windows, PowerShell)
 
 ```powershell
@@ -47,11 +52,12 @@ viz.plot_fields(g, names=("S", "S - A_ext", "|Ric|^2"))
 | `exact.py` | rational helpers, exact polynomial integration on segments, exact linear solve |
 | `integrate.py` | exact polynomial integrals over polygons (Green's theorem), half-plane clipping |
 | `polygon.py` | `Polygon` (lazy, cached invariants), `Edge`, `Affine` |
-| `models.py` | CP², Hirzebruch F_n, CP¹×CP¹, the Wang–Zhou nonagon, random Delzant polygons by blow-ups |
+| `models.py` | CP², Hirzebruch F_n, CP¹×CP¹, CP² blown up at two points with a labelled hypotenuse, the Wang–Zhou nonagon, random Delzant polygons by blow-ups |
 | `metric.py` | `ToricMetric`: S, \|Ric\|², Futaki kernel S − Ŝ, extremal defect S − A_ext |
 | `quadrature.py` | Gauss quadrature on polygons, for checking identities numerically |
 | `stability.py` | exact crease profiles `CreaseProfile`, `crease_search` with exact rational certificates |
 | `crease_exact.py` | critical simple creases as exact algebraic numbers (resultants on each cell of the line arrangement): the exact stability margin `crease_minimum`, and the optimal destabilizer `optimal_crease` (Donaldson's Calabi lower bound, Székelyhidi's piece decomposition) |
+| `survey.py` | parallel, disk-cached exact stability surveys over families of polygons, and threshold labels (the label at which a polygon becomes unstable) |
 | `ambitoric.py` | Apostolov–Calderbank–Gauduchon's stability criterion for labelled quadrilaterals (creases along the diagonals and the coordinate lines of the conic C(Δ, L)): an independent check of `crease_exact` |
 | `parametric.py` | `ParametricPolygon`: fixed normals, symbolic support constants (the Kähler class); invariants as exact rational functions |
 | `solver.py` | `ExtremalSolver`: extremal metrics by Newton's method on Donaldson's convex functional, polynomial potentials of any degree in a basis orthonormal on the polygon |

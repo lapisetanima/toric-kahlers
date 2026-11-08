@@ -41,6 +41,24 @@ def blowup_cp2(a=3, size=1) -> Polygon:
     return Polygon(P.vertices, name="CP2#1")
 
 
+def cp2_two_blowups(s, t, k=1) -> Polygon:
+    """CP^2 blown up at two fixed points: the unit simplex with the corners (1,0), (0,1) cut, sizes s, t.
+
+    Edges x ≥ 0, y ≥ 0, x ≤ 1 − s, x + y ≤ 1, y ≤ 1 − t; inward normals (1,0), (0,1), (−1,0), (−1,−1),
+    (0,−1). A pentagon for s, t > 0, s + t < 1. Label k on the edge x + y = 1, labels 1 elsewhere.
+    s = 0 or t = 0 drops that cut: the quadrilateral (or, for both, the triangle) on the boundary of the family.
+    """
+    s, t, k = as_fraction(s), as_fraction(t), as_fraction(k)
+    if not (s >= 0 and t >= 0 and s + t < 1):
+        raise ValueError("need s, t >= 0 and s + t < 1")
+    verts, labels = [(0, 0)], [1]  # edge from each vertex to the next
+    verts += [(1 - s, 0), (1 - s, s)] if s else [(1, 0)]
+    labels += [1, k] if s else [k]
+    verts += [(t, 1 - t), (0, 1 - t)] if t else [(0, 1)]
+    labels += [1, 1] if t else [1]
+    return Polygon(tuple(verts), labels=tuple(labels), name=f"CP2#2 (s={s}, t={t}, k={k})")
+
+
 def wang_zhou_nonagon(alpha=1000) -> Polygon:
     """The 9-vertex Delzant polygon P* of Wang–Zhou (B. Zhou's thesis, §3.2.2).
 
